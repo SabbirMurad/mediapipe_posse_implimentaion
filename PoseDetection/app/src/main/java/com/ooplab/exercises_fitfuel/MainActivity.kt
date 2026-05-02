@@ -30,8 +30,11 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var previewView: PreviewView
+    private lateinit var poseOverlayView: PoseOverlayView
     private lateinit var poseLandmarker: PoseLandmarker
     private var cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+    @Volatile private var lastImageWidth: Int = 1
+    @Volatile private var lastImageHeight: Int = 1
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,6 +42,7 @@ class MainActivity : AppCompatActivity() {
         setupEdgeToEdge()
         initCameraExecutor()
         previewView = findViewById(R.id.previewCam)
+        poseOverlayView = findViewById(R.id.poseOverlay)
 
         requestCameraPermission()
     }
@@ -64,14 +68,14 @@ class MainActivity : AppCompatActivity() {
         val options = PoseLandmarker.PoseLandmarkerOptions.builder()
             .setBaseOptions(baseOptions)
             .setRunningMode(RunningMode.LIVE_STREAM)
-            .setResultListener { result, _ ->    //Todo: You will get landmarks here and use them for further processing
-                var count = 0
-                result.landmarks().forEach { landmark ->
-                    landmark.forEach{
-                        Log.d("PoseLandmarks", "landmark: $count , x = ${it.x()}, y = ${it.y()}, z = ${it.z()}")
-                        count++
-                        //This will log all the pose landmarks in each frame
-                    }
+            .setResultListener { result, _ ->
+                val landmarks = result.landmarks()
+                val w = lastImageWidth
+                val h = lastImageHeight
+                runOnUiThread {
+                    poseOverlayView.updateLandmarks(
+                        if (landmarks.isNotEmpty()) landmarks[0] else emptyList(), w, h
+                    )
                 }
             }.build()
         poseLandmarker = PoseLandmarker.createFromOptions(this, options)
@@ -118,12 +122,20 @@ class MainActivity : AppCompatActivity() {
             if (cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA){
                 val matrix = Matrix().apply {
                     postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
-                    postScale(-1f, 1f, bitmap.width.toFloat(), bitmap.height.toFloat()) // Mirror flip
+                    postScale(-1f, 1f, bitmap.width.toFloat(), bitmap.height.toFloat())
                 }
                 val rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                lastImageWidth = rotatedBitmap.width
+                lastImageHeight = rotatedBitmap.height
                 mpImage = BitmapImageBuilder(rotatedBitmap).build()
             } else {
-                mpImage = BitmapImageBuilder(bitmap).build()
+                val matrix = Matrix().apply {
+                    postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
+                }
+                val rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                lastImageWidth = rotatedBitmap.width
+                lastImageHeight = rotatedBitmap.height
+                mpImage = BitmapImageBuilder(rotatedBitmap).build()
             }
             val timestamp = imageProxy.imageInfo.timestamp
             poseLandmarker.detectAsync(mpImage, timestamp)
