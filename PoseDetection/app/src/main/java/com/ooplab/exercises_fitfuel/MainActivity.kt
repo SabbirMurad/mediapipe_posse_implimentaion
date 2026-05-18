@@ -6,6 +6,7 @@ import android.graphics.*
 import android.media.Image
 import android.os.Bundle
 import android.util.Log
+import android.widget.Button
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
@@ -36,6 +37,14 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var lastImageWidth: Int = 1
     @Volatile private var lastImageHeight: Int = 1
 
+    private val landmarkSmoother = LandmarkSmoother(
+        minCutoff = 0.5f,
+        beta = 0.5f
+    )
+    private var frameCounter = 0
+    // Process 1 out of every N camera frames; raise to reduce CPU load, lower for more responsiveness.
+    private val processEveryNFrames = 1
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -43,6 +52,15 @@ class MainActivity : AppCompatActivity() {
         initCameraExecutor()
         previewView = findViewById(R.id.previewCam)
         poseOverlayView = findViewById(R.id.poseOverlay)
+
+        findViewById<Button>(R.id.btnSwitchCamera).setOnClickListener {
+            cameraSelector = if (cameraSelector == CameraSelector.DEFAULT_BACK_CAMERA)
+                CameraSelector.DEFAULT_FRONT_CAMERA
+            else
+                CameraSelector.DEFAULT_BACK_CAMERA
+            landmarkSmoother.reset()
+            setupCamera()
+        }
 
         requestCameraPermission()
     }
@@ -72,10 +90,15 @@ class MainActivity : AppCompatActivity() {
                 val landmarks = result.landmarks()
                 val w = lastImageWidth
                 val h = lastImageHeight
+                val timestampSec = android.os.SystemClock.elapsedRealtime() / 1000.0
+                val smoothed = if (landmarks.isNotEmpty()) {
+                    landmarkSmoother.smooth(landmarks[0], timestampSec)
+                } else {
+                    landmarkSmoother.reset()
+                    emptyList()
+                }
                 runOnUiThread {
-                    poseOverlayView.updateLandmarks(
-                        if (landmarks.isNotEmpty()) landmarks[0] else emptyList(), w, h
-                    )
+                    poseOverlayView.updateLandmarks(smoothed, w, h)
                 }
             }.build()
         poseLandmarker = PoseLandmarker.createFromOptions(this, options)
@@ -115,6 +138,10 @@ class MainActivity : AppCompatActivity() {
 
     @OptIn(ExperimentalGetImage::class)
     private fun analyzeImage(imageProxy: ImageProxy) {
+        if (++frameCounter % processEveryNFrames != 0) {
+            imageProxy.close()
+            return
+        }
         val mediaImage = imageProxy.image
         if (mediaImage != null && imageProxy.format == ImageFormat.YUV_420_888) {
             val bitmap = yuvToRgb(mediaImage, imageProxy)

@@ -6,7 +6,6 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
-import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 
 class PoseOverlayView @JvmOverloads constructor(
     context: Context, attrs: AttributeSet? = null
@@ -25,7 +24,7 @@ class PoseOverlayView @JvmOverloads constructor(
         isAntiAlias = true
     }
 
-    private var landmarks: List<NormalizedLandmark> = emptyList()
+    private var landmarks: List<LandmarkPoint> = emptyList()
     private var imageWidth: Int = 1
     private var imageHeight: Int = 1
 
@@ -50,7 +49,7 @@ class PoseOverlayView @JvmOverloads constructor(
         )
     }
 
-    fun updateLandmarks(newLandmarks: List<NormalizedLandmark>, imgWidth: Int, imgHeight: Int) {
+    fun updateLandmarks(newLandmarks: List<LandmarkPoint>, imgWidth: Int, imgHeight: Int) {
         landmarks = newLandmarks
         imageWidth = imgWidth
         imageHeight = imgHeight
@@ -66,21 +65,19 @@ class PoseOverlayView @JvmOverloads constructor(
         val offsetX = (imageWidth * scale - width) / 2f
         val offsetY = (imageHeight * scale - height) / 2f
 
-        fun sx(lm: NormalizedLandmark) = lm.x() * imageWidth * scale - offsetX
-        fun sy(lm: NormalizedLandmark) = lm.y() * imageHeight * scale - offsetY
+        fun sx(x: Float) = x * imageWidth * scale - offsetX
+        fun sy(y: Float) = y * imageHeight * scale - offsetY
 
         for ((start, end) in POSE_CONNECTIONS) {
             if (start < landmarks.size && end < landmarks.size) {
-                canvas.drawLine(
-                    sx(landmarks[start]), sy(landmarks[start]),
-                    sx(landmarks[end]), sy(landmarks[end]),
-                    linePaint
-                )
+                val s = landmarks[start]
+                val e = landmarks[end]
+                canvas.drawLine(sx(s.x), sy(s.y), sx(e.x), sy(e.y), linePaint)
             }
         }
 
         for (lm in landmarks) {
-            canvas.drawCircle(sx(lm), sy(lm), 12f, dotPaint)
+            canvas.drawCircle(sx(lm.x), sy(lm.y), 12f, dotPaint)
         }
     }
 }
