@@ -2,7 +2,7 @@ package com.ooplab.exercises_fitfuel
 
 import com.google.mediapipe.tasks.components.containers.NormalizedLandmark
 
-data class LandmarkPoint(val x: Float, val y: Float)
+data class LandmarkPoint(val x: Float, val y: Float, val estimated: Boolean = false)
 
 class LandmarkSmoother(
     landmarkCount: Int = 33,

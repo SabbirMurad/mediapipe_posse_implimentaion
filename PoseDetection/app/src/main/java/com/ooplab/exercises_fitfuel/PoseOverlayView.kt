@@ -3,6 +3,7 @@ package com.ooplab.exercises_fitfuel
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.util.AttributeSet
 import android.view.View
@@ -22,6 +23,21 @@ class PoseOverlayView @JvmOverloads constructor(
         style = Paint.Style.STROKE
         strokeWidth = 6f
         isAntiAlias = true
+    }
+
+    // Estimated landmarks drawn semi-transparent with dashed lines
+    private val estimatedDotPaint = Paint().apply {
+        color = Color.argb(160, 0, 220, 0)
+        style = Paint.Style.FILL
+        isAntiAlias = true
+    }
+
+    private val estimatedLinePaint = Paint().apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = 4f
+        isAntiAlias = true
+        pathEffect = DashPathEffect(floatArrayOf(14f, 9f), 0f)
     }
 
     private var landmarks: List<LandmarkPoint> = emptyList()
@@ -60,24 +76,30 @@ class PoseOverlayView @JvmOverloads constructor(
         super.onDraw(canvas)
         if (landmarks.isEmpty()) return
 
-        // Match PreviewView's FILL_CENTER: scale by the larger axis, then center-crop
-        val scale = maxOf(width.toFloat() / imageWidth, height.toFloat() / imageHeight)
-        val offsetX = (imageWidth * scale - width) / 2f
+        val scale   = maxOf(width.toFloat() / imageWidth, height.toFloat() / imageHeight)
+        val offsetX = (imageWidth  * scale - width)  / 2f
         val offsetY = (imageHeight * scale - height) / 2f
 
-        fun sx(x: Float) = x * imageWidth * scale - offsetX
+        fun sx(x: Float) = x * imageWidth  * scale - offsetX
         fun sy(y: Float) = y * imageHeight * scale - offsetY
 
+        // Connections
         for ((start, end) in POSE_CONNECTIONS) {
             if (start < landmarks.size && end < landmarks.size) {
-                val s = landmarks[start]
-                val e = landmarks[end]
-                canvas.drawLine(sx(s.x), sy(s.y), sx(e.x), sy(e.y), linePaint)
+                val s     = landmarks[start]
+                val e     = landmarks[end]
+                val paint = if (s.estimated || e.estimated) estimatedLinePaint else linePaint
+                canvas.drawLine(sx(s.x), sy(s.y), sx(e.x), sy(e.y), paint)
             }
         }
 
+        // Dots
         for (lm in landmarks) {
-            canvas.drawCircle(sx(lm.x), sy(lm.y), 12f, dotPaint)
+            if (lm.estimated) {
+                canvas.drawCircle(sx(lm.x), sy(lm.y), 9f, estimatedDotPaint)
+            } else {
+                canvas.drawCircle(sx(lm.x), sy(lm.y), 12f, dotPaint)
+            }
         }
     }
 }
