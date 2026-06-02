@@ -9,8 +9,12 @@ import kotlin.math.sqrt
  * Stateful — keeps a rolling vote for facing direction so it doesn't flip
  * frame-to-frame.  Call [reset] whenever the camera restarts.
  *
- * Each leg is computed independently from its own hip, so left and right
- * landmarks are always at distinct positions.
+ * Each leg is computed independently from its own hip anchor so left and
+ * right landmarks are always at distinct positions.
+ *
+ * Standing detection: if any knee is clearly visible and well below the hip
+ * (drop > 50 % of torso length), the person is assumed to be standing and the
+ * estimator returns the smoothed landmarks untouched.
  */
 class LegEstimator {
 
@@ -32,27 +36,36 @@ class LegEstimator {
 
         // ── Torso geometry ───────────────────────────────────────────────────
         val shoulderMidX = (smoothed[L_SHOULDER].x + smoothed[R_SHOULDER].x) / 2f
+        val shoulderMidY = (smoothed[L_SHOULDER].y + smoothed[R_SHOULDER].y) / 2f
         val hipMidX      = (smoothed[L_HIP].x      + smoothed[R_HIP].x)      / 2f
         val hipMidY      = (smoothed[L_HIP].y       + smoothed[R_HIP].y)      / 2f
-        val shoulderMidY = (smoothed[L_SHOULDER].y  + smoothed[R_SHOULDER].y) / 2f
         val torsoLen     = dist(shoulderMidX, shoulderMidY, hipMidX, hipMidY)
         if (torsoLen < 0.01f) return smoothed
 
         val thighLen = torsoLen * THIGH_RATIO
         val shinLen  = torsoLen * SHIN_RATIO
 
+        // ── Standing guard ────────────────────────────────────────────────────
+        // If any high-confidence knee is significantly below the hip the person
+        // is standing — estimation would produce a seated geometry, so bail out.
+        val standingThreshold = torsoLen * 0.50f
+        val standingDetected =
+            (isHighConf(raw[L_KNEE]) && smoothed[L_KNEE].y - hipMidY > standingThreshold) ||
+            (isHighConf(raw[R_KNEE]) && smoothed[R_KNEE].y - hipMidY > standingThreshold)
+        if (standingDetected) return smoothed
+
         // ── Facing direction (nose offset from shoulder midpoint) ─────────────
         updateFacingVote(smoothed[NOSE].x, shoulderMidX)
         val facingSign = lockedFacingSign
             ?: if (smoothed[NOSE].x > shoulderMidX) 1f else -1f
 
-        // ── Left leg (anchored to L_HIP) ─────────────────────────────────────
-        val lKneeOk = isHighConf(raw[L_KNEE]) &&
-                      isKneeForward(smoothed[L_KNEE].x, hipMidX, facingSign, thighLen)
-
+        // ── Left leg (anchored to L_HIP) ──────────────────────────────────────
+        // Trust MediaPipe's knee position if it is highly confident.
+        // isKneeForward is intentionally removed — it rejected valid standing
+        // positions and is not needed now that standing is caught above.
         val lKneeX: Float
         val lKneeY: Float
-        if (lKneeOk) {
+        if (isHighConf(raw[L_KNEE])) {
             lKneeX = smoothed[L_KNEE].x
             lKneeY = smoothed[L_KNEE].y
         } else {
@@ -66,12 +79,9 @@ class LegEstimator {
         }
 
         // ── Right leg (anchored to R_HIP) ─────────────────────────────────────
-        val rKneeOk = isHighConf(raw[R_KNEE]) &&
-                      isKneeForward(smoothed[R_KNEE].x, hipMidX, facingSign, thighLen)
-
         val rKneeX: Float
         val rKneeY: Float
-        if (rKneeOk) {
+        if (isHighConf(raw[R_KNEE])) {
             rKneeX = smoothed[R_KNEE].x
             rKneeY = smoothed[R_KNEE].y
         } else {
@@ -103,16 +113,13 @@ class LegEstimator {
         if (facingVotes.size >= VOTE_WINDOW) {
             val fraction = facingVotes.count { it > 0f }.toFloat() / facingVotes.size
             when {
-                fraction >= LOCK_FRACTION       -> lockedFacingSign = 1f
-                fraction <= 1f - LOCK_FRACTION  -> lockedFacingSign = -1f
+                fraction >= LOCK_FRACTION      -> lockedFacingSign = 1f
+                fraction <= 1f - LOCK_FRACTION -> lockedFacingSign = -1f
             }
         }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private fun isKneeForward(kneeX: Float, hipMidX: Float, facingSign: Float, thighLen: Float) =
-        (kneeX - hipMidX) * facingSign > thighLen * 0.25f
 
     private fun isHighConf(lm: NormalizedLandmark) =
         lm.visibility().isPresent && lm.visibility().get() >= HIGH_CONFIDENCE
@@ -121,12 +128,12 @@ class LegEstimator {
         sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1))
 
     companion object {
-        private const val HIGH_CONFIDENCE    = 0.65f
-        private const val THIGH_RATIO        = 0.90f
-        private const val SHIN_RATIO         = 0.90f
-        private const val SEATED_THIGH_DROP  = 0.08f
-        private const val VOTE_WINDOW        = 20
-        private const val LOCK_FRACTION      = 0.70f
+        private const val HIGH_CONFIDENCE   = 0.65f
+        private const val THIGH_RATIO       = 0.90f
+        private const val SHIN_RATIO        = 0.90f
+        private const val SEATED_THIGH_DROP = 0.08f
+        private const val VOTE_WINDOW       = 20
+        private const val LOCK_FRACTION     = 0.70f
 
         private const val NOSE       = 0
         private const val L_SHOULDER = 11; private const val R_SHOULDER = 12

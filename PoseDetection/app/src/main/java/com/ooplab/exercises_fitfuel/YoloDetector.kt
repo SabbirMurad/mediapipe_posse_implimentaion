@@ -18,7 +18,7 @@ private const val NUM_CLASSES = 80
 private const val PERSON_CLASS = 0
 private const val TV_CLASS = 62
 private const val LAPTOP_CLASS = 63
-private const val CONFIDENCE_THRESHOLD = 0.40f
+private const val CONFIDENCE_THRESHOLD = 0.45f
 private const val MONITOR_CONFIDENCE_THRESHOLD = 0.35f
 private const val NMS_IOU_THRESHOLD = 0.45f
 
